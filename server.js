@@ -9,6 +9,7 @@ app.use(cors({
   origin: [
     'https://mariyamk2500-sys.github.io',
     'https://dashboard-production-53aa.up.railway.app',
+    'https://extract-clip-backend-production.up.railway.app',
     'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'OPTIONS'],
