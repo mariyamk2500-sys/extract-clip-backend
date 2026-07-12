@@ -1,10 +1,9 @@
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
-const youtubeDl = require('youtube-dl-exec');
+const ytdl = require('ytdl-core');
 const fs = require('fs-extra');
 const path = require('path');
 
-// Tell fluent-ffmpeg exactly where the FFmpeg binary is
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 async function cutClip(videoUrl, start, end, speed, format, title) {
@@ -12,23 +11,40 @@ async function cutClip(videoUrl, start, end, speed, format, title) {
   await fs.ensureDir(tempDir);
 
   const videoPath = path.join(tempDir, `input-${Date.now()}.mp4`);
+  const outputPath = path.join(tempDir, `clip-${Date.now()}.${format || 'mp4'}`);
 
   console.log('⬇️ Downloading video...');
-  await youtubeDl(videoUrl, {
-    output: videoPath,
-    format: 'best[ext=mp4]',
+
+  // Download using ytdl-core (no python needed)
+  await new Promise((resolve, reject) => {
+    const stream = ytdl(videoUrl, {
+      quality: 'highestvideo',
+      filter: 'videoandaudio'
+    });
+
+    const writeStream = fs.createWriteStream(videoPath);
+    stream.pipe(writeStream);
+
+    stream.on('error', reject);
+    writeStream.on('finish', resolve);
+    writeStream.on('error', reject);
   });
 
-  const outputPath = path.join(tempDir, `clip-${Date.now()}.${format}`);
-  const duration = end - start;
+  console.log('✅ Download complete!');
 
+  const duration = end - start;
   console.log(`✂️ Cutting clip from ${start}s to ${end}s...`);
 
   return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
+    let command = ffmpeg(videoPath)
       .setStartTime(start)
-      .duration(duration)
-      .videoFilters(`setpts=${1 / speed}*PTS`)
+      .duration(duration);
+
+    if (speed && speed !== 1) {
+      command = command.videoFilters(`setpts=${1 / speed}*PTS`);
+    }
+
+    command
       .output(outputPath)
       .on('end', () => {
         console.log('✅ Clip ready!');
@@ -37,6 +53,7 @@ async function cutClip(videoUrl, start, end, speed, format, title) {
       })
       .on('error', (err) => {
         console.error('FFmpeg error:', err.message);
+        fs.remove(videoPath).catch(() => {});
         reject(err);
       })
       .run();
